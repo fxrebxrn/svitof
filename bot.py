@@ -19,7 +19,14 @@ dp.register_message_handler(
     content_types=types.ContentType.DOCUMENT
 )
 
-if __name__ == "__main__":
+async def on_startup(dp):
     init_db()
     scheduler.start()
-    executor.start_polling(dp, skip_updates=True)
+    print("✅ Бот запущено, scheduler активний")
+
+if __name__ == "__main__":
+    executor.start_polling(
+        dp,
+        skip_updates=True,
+        on_startup=on_startup
+    )
