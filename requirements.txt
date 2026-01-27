@@ -1,0 +1,4 @@
+aiogram
+apscheduler
+pandas
+openpyxl
