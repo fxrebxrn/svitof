@@ -30,3 +30,8 @@ if __name__ == "__main__":
         skip_updates=True,
         on_startup=on_startup
     )
+dp.register_message_handler(
+    handle_text_schedule,
+    lambda m: m.from_user.id == ADMIN_ID,
+    content_types=types.ContentType.TEXT
+)
