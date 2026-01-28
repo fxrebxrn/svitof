@@ -1,71 +1,71 @@
 import re
 from datetime import date
-from db import get_conn
-from scheduler import reschedule
+from aiogram import types
 from config import ADMIN_ID
-
+from db import get_db
+from scheduler import rebuild_jobs
 
 TIME_RE = re.compile(r"(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2}|24:00)")
 
 
-async def handle_schedule_text(message, bot):
+async def upload_command(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer(
+        "📥 Надішліть графік одним повідомленням текстом.\n"
+        "Формат: ЦЕК / ДТЕК → Черги → Час"
+    )
+
+
+async def handle_text_schedule(message: types.Message, bot):
     if message.from_user.id != ADMIN_ID:
         return
 
     lines = [l.strip() for l in message.text.splitlines() if l.strip()]
-    if not lines:
-        return
-
     company = lines[0].upper()
     today = date.today().isoformat()
 
     current_queue = None
-    inserted = 0
+    added = 0
 
-    with get_conn() as conn:
-        cur = conn.cursor()
+    db = get_db()
+    cur = db.cursor()
 
-        # видаляємо старі графіки компанії
-        cur.execute(
-            "DELETE FROM schedules WHERE company=? AND date=?",
-            (company, today)
-        )
+    cur.execute(
+        "DELETE FROM schedules WHERE company=? AND date=?",
+        (company, today)
+    )
 
-        for line in lines[1:]:
-            # Черга / Група
-            if line.lower().startswith(("черга", "група")):
-                current_queue = line.split()[-1]
-                continue
+    for line in lines[1:]:
+        if line.lower().startswith(("черга", "група")):
+            current_queue = line.split()[-1]
+            continue
 
-            if not current_queue:
-                continue
+        if not current_queue:
+            continue
 
-            # прибираємо коментарі в дужках
-            clean_line = re.sub(r"\(.*?\)", "", line)
+        clean = re.sub(r"\(.*?\)", "", line)
+        m = TIME_RE.search(clean)
+        if not m:
+            continue
 
-            match = TIME_RE.search(clean_line)
-            if not match:
-                continue
+        off_t, on_t = m.groups()
 
-            start, end = match.groups()
+        cur.execute("""
+            INSERT INTO schedules
+            (company, queue, date, off_time, on_time)
+            VALUES (?, ?, ?, ?, ?)
+        """, (company, current_queue, today, off_t, on_t))
 
-            cur.execute(
-                """
-                INSERT INTO schedules
-                (company, queue, date, off_time, on_time)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (company, current_queue, today, start, end)
-            )
-            inserted += 1
+        added += 1
 
-        conn.commit()
+    db.commit()
+    db.close()
 
-    reschedule(bot)
+    rebuild_jobs(bot)
 
     await message.answer(
         f"✅ Графік збережено\n"
         f"Компанія: {company}\n"
-        f"Додано інтервалів: {inserted}\n"
-        f"Сповіщення оновлено"
+        f"Інтервалів: {added}"
     )
